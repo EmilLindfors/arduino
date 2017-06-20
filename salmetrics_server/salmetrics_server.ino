@@ -63,41 +63,72 @@ void loop()
 {
   if (rf95.available())
   {
-    // Should be a message for us now   
     uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
     uint8_t len = sizeof(buf);
     if (rf95.recv(buf, &len))
     {
       digitalWrite(led, HIGH);
       RH_RF95::printBuffer("request: ", buf, len);
-      Console.print("got request: ");
-      Console.println((char*)buf);
-      Console.print("RSSI: ");
-      Console.println(rf95.lastRssi(), DEC);
-     
 
-
-
-    //  ThingSpeak.writeFields(myChannelNumber, myWriteAPIKey);
-      // Send a reply
       char* ab = (char)buf;
-     
       String a = String(ab);
+      Console.print("Receiving package: ");
+      Console.println(a);
+      String data = "";
 
-      int commaIndex = a.indexOf(',');
+      char* command = strtok(a.c_str(), ";");
+      while (command != 0)
+      {
+        char* separator = strchr(command, ':');
+        if (separator != 0)
+        {
+        *separator = 0;
+        //int servoId = atoi(command);
+        ++separator;
+        //int position = atoi(separator);
+        String str1(command);
+        str1.replace(";"," ");
+        str1.trim();
+        String str2(separator);
+        str2.replace(";"," ");
+        str2.trim();
+        Console.print(str1);
+        Console.println(str2);
+        if (str1=="DO") {
+          data.concat("&field1=");
+          data.concat(str2);
+        }
+        if (str1=="EC") {
+          data.concat("&field2=");
+          data.concat(str2);
+        }
+        }
+        command = strtok(0, "&");
+      }
+      if (data.length()>0) {
+        Console.print("Interpeted as: ");
+        Console.println(data);
+        updateThingSpeak(data);
+      }
+      //DO:6.02;EC:0.10
+      /*
+      int commaIndex = a.indexOf(':');
       String firstValue = a.substring(0, commaIndex);
-      Console.println(commaIndex);
-      Console.println(firstValue);
       String secondValue = a.substring(commaIndex + 1, a.length());
-
+      Console.println(firstValue);
+      Console.println(secondValue);
+      if (firstValue=="DO") {
+        updateThingSpeak("field1=" + secondValue);
+        delay(4000);
+      } else if (firstValue=="EC") {
+        delay(4000);
+        updateThingSpeak("field2=" + secondValue);
+      } else {
+        Console.println("Invalid sensor ID"); 
+      }
+    */
      
-       updateThingSpeak("field1=" + firstValue + "&field2=" + secondValue);
-
-      
-      uint8_t data[] = "And hello back to you";
-      rf95.send(data, sizeof(data));
-      rf95.waitPacketSent();
-      Console.println("Sent a reply");
+       //updateThingSpeak("field1=" + firstValue + "&field2=" + secondValue);
       digitalWrite(led, LOW);
     }
     else
