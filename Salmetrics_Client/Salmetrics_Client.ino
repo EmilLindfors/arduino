@@ -1,37 +1,25 @@
-/*
-  LoRa Simple Client for Arduino :
-  Support Devices: LoRa Shield + Arduino 
-  
-  Example sketch showing how to create a simple messageing client, 
-  with the RH_RF95 class. RH_RF95 class does not provide for addressing or
-  reliability, so you should only use RH_RF95 if you do not need the higher
-  level messaging abilities.
-
-  It is designed to work with the other example LoRa Simple Server
-
-  modified 16 11 2016
-  by Edwin Chen <support@dragino.com>
-  Dragino Technology Co., Limited
-*/
-
 #include <SPI.h>
 #include <RH_RF95.h>
 #include <Wire.h>  
+#include <string.h>
 
+
+// https://stackoverflow.com/questions/191757/how-to-concatenate-a-stdstring-and-an-int
 
 #define TOTAL_CIRCUITS 2                       // <-- CHANGE THIS | set how many I2C circuits are attached to the Tentacle
+int channel_ids[] = {97,100};                 // <-- CHANGE THIS. A list of I2C ids that you set your circuits to.
+char *channel_names[] = {"DO","EC"};            // <-- CHANGE THIS. A list of channel names (must be the same order as in channel_ids[]) - only used to designate the readings in serial communications
+
 
 const unsigned int baud_host  = 9600;        // set baud rate for host serial monitor(pc/mac/other)
 const unsigned int send_readings_every = 10000; // set at what intervals the readings are sent to the computer (NOTE: this is not the frequency of taking the readings!)
-unsigned long next_serial_time;
+unsigned long next_network_send_time;
 
 char sensordata[30];                          // A 30 byte character array to hold incoming data from the sensors
 byte sensor_bytes_received = 0;               // We need to know how many characters bytes have been received
 byte code = 0;                                // used to hold the I2C response code.
 byte in_char = 0;                             // used as a 1 byte buffer to store in bound bytes from the I2C Circuit.
 
-int channel_ids[] = {97,100};        // <-- CHANGE THIS. A list of I2C ids that you set your circuits to.
-char *channel_names[] = {"DO","EC"};   // <-- CHANGE THIS. A list of channel names (must be the same order as in channel_ids[]) - only used to designate the readings in serial communications
 String readings[TOTAL_CIRCUITS];               // an array of strings to hold the readings of each channel
 int channel = 0;                              // INT pointer to hold the current position in the channel_ids/channel_names array
 
@@ -44,9 +32,6 @@ unsigned long next_blink_time;                // holds the next time the led sho
 boolean led_state = LOW;                      // keeps track of the current led state
 
 
-
-
-
 // Singleton instance of the radio driver
 RH_RF95 rf95;
 float frequency = 868.0;
@@ -56,9 +41,7 @@ void setup()
 
  pinMode(13, OUTPUT);                        // set the led output pin
   Wire.begin();                   // enable I2C port.
-  next_serial_time = millis() + send_readings_every;  // calculate the next point in time we should do serial communications
-
-
+  next_network_send_time = millis() + send_readings_every;  // calculate the next point in time we should do serial communications
   
   Serial.begin(9600);
   while (!Serial) ; // Wait for serial port to be available
@@ -75,69 +58,43 @@ void setup()
 void loop()
 {
   do_sensor_readings();
-  do_serial();
-
-
-  
-  Serial.println("Sending to LoRa Server");
-  // Send a message to LoRa Server
-  /*
-  uint8_t data[] = "Hello World!";
-  rf95.send(data, sizeof(data));
-  
-  rf95.waitPacketSent();
-  // Now wait for a reply
-  uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
-  uint8_t len = sizeof(buf);
-
-  if (rf95.waitAvailableTimeout(3000))
-  { 
-    // Should be a reply message for us now   
-    if (rf95.recv(buf, &len))
-   {
-      Serial.print("got reply: ");
-      Serial.println((char*)buf);
-      Serial.print("RSSI: ");
-      Serial.println(rf95.lastRssi(), DEC);    
-    }
-    else
-    {
-      Serial.println("recv failed");
-    }
-  }
-  else
-  {
-    Serial.println("No reply, is LoRa server running?");
-  }
-  */
-  delay(10000);
+  do_network_send();
+  delay(1000);
 }
 
-
-
-
-// do serial communication in a "asynchronous" way
-void do_serial() {
-  if (millis() >= next_serial_time) {                // is it time for the next serial communication?
-    for (int i = 0; i < TOTAL_CIRCUITS; i++) {       // loop through all the sensors
+void do_network_send() {
+  if (millis() >= next_network_send_time) {
+    String dataPacket = "";
+    for (int i = 0; i < TOTAL_CIRCUITS; i++) {
+      if (readings[i]!=NULL) {
+        char snum[5];
+        char data[30] = "";
+        itoa(i, snum, 10);
       
-  uint8_t data[30];
-  //Serial.println(channel_names[i]);  
-  //Serial.println(readings[i]);
-  
-  //String data2 = i+","+readings[i];
-  
-  Serial.println(data2);
-  data2.toCharArray(data,30);
-  rf95.send(data, sizeof(data));
-  
-  rf95.waitPacketSent();
-  // Now wait for a reply
-  uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
-  uint8_t len = sizeof(buf);
-
+        char dataReading[28];
+        readings[i].toCharArray(dataReading,30);
+        snprintf(data, sizeof(data), "%s:%s", channel_names[i], dataReading);
+        Serial.print("Transmitting data: ");
+        Serial.println(data);
+        //rf95.send(data, sizeof(data));
+        //rf95.waitPacketSent();
+        dataPacket.concat(data);
+        dataPacket.concat(";");
+      } else {
+        Serial.println("Sensor not ready");
+      }
     }
-    next_serial_time = millis() + send_readings_every;
+    if (dataPacket.length()>0) {
+      Serial.print("Comlete packet: ");
+      Serial.println(dataPacket);
+      uint8_t p2[31];
+      dataPacket.toCharArray(p2,30);
+      const uint8_t* p = reinterpret_cast<const uint8_t*>(dataPacket.c_str());
+      rf95.send(p2, sizeof(p2));
+      rf95.waitPacketSent();
+    }
+
+    next_network_send_time = millis() + send_readings_every;
   }
 }
 
